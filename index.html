@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>फोन लोकेशन ट्रैकर</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { margin: 0; padding: 16px; background-color: #f1f5f9; }
+    .card { background: white; padding: 18px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 600px; margin: auto; }
+    h2 { margin-top: 0; color: #1e293b; font-size: 20px; }
+    .search-box { display: flex; gap: 8px; margin-bottom: 12px; }
+    input { flex: 1; padding: 12px; font-size: 16px; border: 1.5px solid #cbd5e1; border-radius: 8px; outline: none; }
+    button { padding: 12px 18px; font-size: 16px; background-color: #2563eb; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    #map { height: 380px; width: 100%; border-radius: 10px; margin-top: 14px; border: 1px solid #e2e8f0; }
+    .info { margin-top: 12px; padding: 12px; border-radius: 8px; font-size: 14px; line-height: 1.5; }
+    .info-red { background: #fee2e2; color: #991b1b; }
+    .info-green { background: #dcfce7; color: #166534; }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <h2>🛰️ लॉस्ट फोन फाइंडर</h2>
+    <div class="search-box">
+      <input type="tel" id="phone" placeholder="रजिस्टर्ड मोबाइल नंबर..." />
+      <button onclick="findPhone()">ट्रैक करें</button>
+    </div>
+
+    <div id="status" style="display: none;" class="info"></div>
+    <div id="map"></div>
+  </div>
+
+  <script>
+    // अपनी Supabase क्रेडेंशियल्स यहाँ बदलें
+    const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+    const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // भारत के केंद्र पर मैप इनिशियलाइज़
+    const map = L.map('map').setView([20.5937, 78.9629], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    let marker;
+
+    async function findPhone() {
+      const phoneInput = document.getElementById('phone').value.trim();
+      const statusDiv = document.getElementById('status');
+
+      if (!phoneInput) {
+        alert("कृपया मोबाइल नंबर दर्ज करें");
+        return;
+      }
+
+      statusDiv.style.display = "block";
+      statusDiv.className = "info";
+      statusDiv.innerText = "डेटाबेस में खोज रहे हैं...";
+
+      const { data, error } = await supabase
+        .from('device_tracking')
+        .select('*')
+        .eq('registered_phone', phoneInput)
+        .single();
+
+      if (error || !data) {
+        statusDiv.className = "info info-red";
+        statusDiv.innerText = "❌ इस नंबर से जुड़ी कोई डिवाइस नहीं मिली!";
+        return;
+      }
+
+      const lat = data.latitude;
+      const lon = data.longitude;
+
+      map.setView([lat, lon], 16);
+      if (marker) marker.remove();
+
+      const isSimChanged = data.sim_status === 'CHANGED';
+      marker = L.marker([lat, lon]).addTo(map)
+        .bindPopup(`
+          <b>डिवाइस स्थिति:</b><br>
+          सिम: ${isSimChanged ? '⚠️ दूसरा सिम डाला गया!' : '✅ सामान्य'}<br>
+          बैटरी: ${data.battery_level}%<br>
+          अपडेट: ${new Date(data.last_updated).toLocaleTimeString('hi-IN')}<br>
+          <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lon}" target="_blank">Google Maps में रूट देखें</a>
+        `).openPopup();
+
+      statusDiv.className = isSimChanged ? "info info-red" : "info info-green";
+      statusDiv.innerHTML = `
+        📍 <b>लोकेशन मिल गई!</b><br>
+        अक्षांश/देशांतर: ${lat}, ${lon}<br>
+        सिम स्थिति: ${isSimChanged ? 'अलर्ट: सिम बदला गया!' : 'ओरिजिनल सिम'}<br>
+        बैटरी: ${data.battery_level || 'N/A'}%
+      `;
+    }
+  </script>
+</body>
+</html>
